@@ -1,0 +1,3 @@
+[submodule "aws_lambda/mujoco-py"]
+	path = aws_lambda/mujoco-py
+	url = https://github.com/IntelliSys-Lab/mujoco-py.git

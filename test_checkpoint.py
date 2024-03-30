@@ -1,0 +1,148 @@
+import numpy as np
+import torch
+import time
+import csv
+import collections
+import logging
+import config
+import utils
+import ray
+from env import Environment
+
+
+def experiment(
+    scheduler_name,
+    is_serverless
+):
+    # Start training
+    for algo_name in config.algos:
+        for env_name in config.envs.keys():
+            # Set up environment
+            env = Environment(
+                scheduler_name=scheduler_name,
+                algo_name=algo_name,
+                env_name=env_name,
+                target_reward=config.envs[env_name]["max_reward"],
+                budget=config.envs[env_name]["budget"],
+                stop_min_round=config.stop_min_round,
+                stop_max_round=config.stop_max_round,
+                stop_num_results=config.stop_num_results,
+                stop_cv=config.stop_cv,
+                stop_grace_period=config.stop_grace_period,
+                rollout_fragment_length=config.envs[env_name]["rollout_fragment_length"],
+                is_serverless=is_serverless,
+                is_env_discrete=config.envs[env_name]["is_env_discrete"],
+            )
+
+            # Start training
+            for exp_id in range(config.max_exp):
+                state, mask, info = env.reset()
+
+                csv_round = [
+                    [
+                        "round_id",
+                        "duration",
+                        "num_rollout_workers",
+                        "num_envs_per_worker",
+                        "episodes_this_iter",
+                        "learner_time", 
+                        "actor_time",
+                        "eval_reward",
+                        "learner_loss",
+                        "cost",
+                        "kl",
+                    ]
+                ]
+
+                round_id = 1
+
+                action = {}
+                action["num_rollout_workers"] = config.num_rollout_workers_max
+                action["num_envs_per_worker"] = config.num_envs_per_worker_min
+
+                round_done = False
+                while round_done is False:
+                    next_state, next_mask, reward, done, info = env.step(
+                        round_id=round_id,
+                        action=action
+                    )
+
+                    csv_round.append(
+                        [
+                            round_id,
+                            info["duration"],
+                            action["num_rollout_workers"],
+                            action["num_envs_per_worker"],
+                            info["episodes_this_iter"],
+                            info["learner_time"],
+                            info["actor_time"],
+                            info["eval_reward"],
+                            info["learner_loss"],
+                            info["cost"],
+                            info["kl"],
+                        ]
+                    )
+
+                    print("")
+                    print("******************")
+                    print("******************")
+                    print("******************")
+                    print("")
+                    print("Running {}, algo {}, env {}, exp_id {}".format(scheduler_name, algo_name, env_name, exp_id))
+                    print("round_id: {}".format(info["round_id"]))
+                    print("duration: {}".format(info["duration"]))
+                    print("action: {}".format(action))
+                    print("episodes_this_iter: {}".format(info["episodes_this_iter"]))
+                    print("eval_reward: {}".format(info["eval_reward"]))
+                    print("cost: {}".format(info["cost"]))
+
+                    ckpt_path = "./ckpt/{}~{}~{}~{}".format(scheduler_name, algo_name, env_name, round_id)
+                    env.save(ckpt_path)
+
+                    if done:
+                        utils.export_csv(
+                            scheduler_name=scheduler_name,
+                            env_name=env_name, 
+                            algo_name=algo_name, 
+                            exp_id=exp_id,
+                            csv_name="",
+                            csv_file=csv_round
+                        )
+
+                        round_done = True
+
+                    state = next_state
+                    mask = next_mask
+                    round_id = round_id + 1
+
+
+if __name__ == "__main__":
+    scheduler_name = "test_checkpoint"
+    is_serverless = False
+    # is_serverless = True
+
+    print("")
+    print("**********")
+    print("**********")
+    print("**********")
+    print("")
+    ray.init(
+        log_to_driver=False,
+        configure_logging=True,
+        logging_level=logging.ERROR
+    )
+
+    print("Start training...")
+    print("Running {}, is serverless? {}".format(scheduler_name, is_serverless))
+    experiment(
+        scheduler_name=scheduler_name,
+        is_serverless=is_serverless
+    )
+
+    ray.shutdown()
+    print("")
+    print("{} training finished!".format(scheduler_name))
+    print("")
+    print("**********")
+    print("**********")
+    print("**********")

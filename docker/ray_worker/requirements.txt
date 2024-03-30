@@ -1,0 +1,7 @@
+torch 
+autorom[accept-rom-license] 
+ray[rllib] 
+gym[atari] 
+mujoco-py 
+pygame 
+numpy==1.23.5
